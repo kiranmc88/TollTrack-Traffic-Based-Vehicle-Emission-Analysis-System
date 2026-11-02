@@ -1,0 +1,8 @@
+category,daily_count,estimated_30day_count,category_code,description,pcu_factor
+Car / Jeep / Van,21680,650400,CAR,Personal and light passenger motor vehicles,1.0
+Mini LCV,4617,138510,MINI_LCV,Small commercial vehicles and micro-freight (e.g. Tata Ace),1.4
+LCV,909,27270,LCV,Light commercial goods carriers and mini-buses (< 7.5T),1.5
+Bus,1842,55260,BUS,Heavy passenger transport buses (State / Private / Intercity),3.0
+2-Axle Truck,3214,96420,TRUCK_2AXLE,Medium-to-heavy commercial 2-axle rigid goods carriers,3.0
+3-Axle Truck,2165,64950,TRUCK_3AXLE,Heavy commercial 3-axle rigid freight trucks,3.0
+Multi-Axle Vehicle / OSV,2850,85500,MAV_OSV,Heavy multi-axle freight carriers and oversized vehicles (4+ axles),4.5
