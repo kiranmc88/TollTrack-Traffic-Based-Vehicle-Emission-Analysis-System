@@ -11,6 +11,8 @@ import {
   Calendar,
   Layers,
   ArrowRight,
+  Sparkles,
+  Camera,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -194,6 +196,31 @@ export default function OverviewDashboard({ onNavigate }) {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* NEW FEATURE: AI Vehicle Detection & Emission Calculator Banner */}
+      <div className="rounded-2xl border border-emerald-300 dark:border-emerald-800 bg-gradient-to-r from-emerald-600 to-teal-700 p-5 sm:p-6 text-white shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+        <div className="space-y-1.5 max-w-2xl">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-[11px] font-bold tracking-wide uppercase">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>New Fully Functional Feature</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+            AI Vehicle Detection & Emission Calculator
+          </h2>
+          <p className="text-xs sm:text-sm text-emerald-50 leading-relaxed">
+            Capture a live photo with your camera or upload toll plaza imagery. Pretrained YOLO AI classifies
+            cars, buses, trucks, and motorcycles, and calculates instantaneous CO2 & NOx emissions with adjustable distance.
+          </p>
+        </div>
+        <button
+          onClick={() => onNavigate('aiDetection')}
+          className="px-5 py-3 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-xs sm:text-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer shrink-0"
+        >
+          <Camera className="w-4 h-4 text-emerald-700" />
+          <span>Launch AI Detector</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Visualizations Grid */}

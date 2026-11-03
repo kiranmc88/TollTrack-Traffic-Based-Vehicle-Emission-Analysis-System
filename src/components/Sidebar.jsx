@@ -11,10 +11,12 @@ import {
   MapPin,
   ExternalLink,
   FileCheck2,
+  Sparkles,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview Dashboard', icon: LayoutDashboard },
+  { id: 'aiDetection', label: 'AI Vehicle Detection & Calculator', icon: Sparkles },
   { id: 'realData', label: 'Real Data & Research Methodology', icon: FileCheck2 },
   { id: 'traffic', label: 'Vehicle Traffic Analysis', icon: Truck },
   { id: 'distance', label: 'Distance Simulator', icon: Route },

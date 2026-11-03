@@ -12,6 +12,7 @@ import ComparisonAnalysis from './pages/ComparisonAnalysis';
 import DataManagement from './pages/DataManagement';
 import Methodology from './pages/Methodology';
 import RealDataResearchMethodology from './pages/RealDataResearchMethodology';
+import AiVehicleDetection from './pages/AiVehicleDetection';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 
 
@@ -63,6 +64,9 @@ function DashboardLayout() {
               <>
                 {activePage === 'overview' && (
                   <OverviewDashboard onNavigate={setActivePage} />
+                )}
+                {activePage === 'aiDetection' && (
+                  <AiVehicleDetection onNavigate={setActivePage} />
                 )}
                 {activePage === 'realData' && (
                   <RealDataResearchMethodology onNavigate={setActivePage} />
