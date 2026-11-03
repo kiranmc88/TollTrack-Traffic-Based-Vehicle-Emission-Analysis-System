@@ -34,8 +34,25 @@ from calculator import calculate_ai_emissions, DEFAULT_DISTANCE_KM
 from report_generator import generate_csv_report, generate_pdf_report
 
 app = Flask(__name__)
-# Enable CORS for local Vite dev server and general origins
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# Robust CORS configuration for Vite dev server, previews, and direct browser requests
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
+
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    return response
+
+
+@app.route('/api/<path:subpath>', methods=['OPTIONS'])
+def handle_options(subpath):
+    response = make_response('', 204)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    return response
 
 
 @app.route('/api/health', methods=['GET'])

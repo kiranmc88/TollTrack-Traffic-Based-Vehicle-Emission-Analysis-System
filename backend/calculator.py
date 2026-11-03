@@ -195,3 +195,4 @@ def calculate_ai_emissions(category_counts: dict, distance_km: float = DEFAULT_D
         'categories': category_details,
         'activeCategoriesOnly': [c for c in category_details if c['count'] > 0]
     }
+

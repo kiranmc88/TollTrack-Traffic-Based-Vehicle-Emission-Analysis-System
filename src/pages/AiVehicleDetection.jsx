@@ -45,6 +45,34 @@ import {
 import { DEFAULT_EMISSION_FACTORS } from '../data/emissionFactors';
 import { formatNumber, formatEmissions, formatNox } from '../utils/formatters';
 
+// Configurable backend URL from environment variables
+const RAW_BACKEND_URL = (
+  import.meta.env.VITE_BACKEND_URL ||
+  import.meta.env.VITE_API_URL ||
+  'http://127.0.0.1:5000'
+).replace(/\/+$/, '');
+
+/**
+ * Resilient API fetch: tries the explicit backend URL first,
+ * and falls back to relative path via Vite proxy if needed.
+ */
+async function apiFetch(endpoint, options = {}) {
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const fullUrl = `${RAW_BACKEND_URL}${path}`;
+
+  try {
+    const res = await fetch(fullUrl, options);
+    return res;
+  } catch (directErr) {
+    try {
+      const relRes = await fetch(path, options);
+      return relRes;
+    } catch {
+      throw directErr;
+    }
+  }
+}
+
 const ALL_CATEGORIES = [
   'Car / Jeep / Van',
   'Mini LCV',
@@ -87,11 +115,13 @@ export default function AiVehicleDetection({ onNavigate }) {
 
   // Detection & Results
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisPhase, setAnalysisPhase] = useState('');
   const [detections, setDetections] = useState([]);
   const [annotatedImage, setAnnotatedImage] = useState(null);
   const [emissionResults, setEmissionResults] = useState(null);
   const [analysisDate, setAnalysisDate] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   // Backend Health
   const [backendStatus, setBackendStatus] = useState('checking'); // 'online' | 'offline' | 'checking'
@@ -105,24 +135,34 @@ export default function AiVehicleDetection({ onNavigate }) {
   const mediaStreamRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Check Backend Health on Mount
+  // Check Backend Health on Mount and Periodically
   useEffect(() => {
     checkBackendHealth();
+    const interval = setInterval(() => {
+      checkBackendHealth(true);
+    }, 15000);
+    return () => clearInterval(interval);
   }, []);
 
-  const checkBackendHealth = async () => {
-    setBackendStatus('checking');
+  const checkBackendHealth = async (silent = false) => {
+    if (!silent) setBackendStatus('checking');
     try {
-      const res = await fetch('/api/health', { method: 'GET', signal: AbortSignal.timeout(3500) });
-      if (res.ok) {
+      const res = await apiFetch('/api/health', {
+        method: 'GET',
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res && res.ok) {
         const data = await res.json();
         setBackendStatus('online');
         setBackendInfo(data);
-      } else {
-        setBackendStatus('offline');
+        if (!silent) setErrorMsg(null);
+        return true;
       }
+      setBackendStatus('offline');
+      return false;
     } catch {
       setBackendStatus('offline');
+      return false;
     }
   };
 
@@ -183,7 +223,7 @@ export default function AiVehicleDetection({ onNavigate }) {
     canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
     setSelectedImage(dataUrl);
     setImagePreview(dataUrl);
@@ -192,6 +232,7 @@ export default function AiVehicleDetection({ onNavigate }) {
     setAnnotatedImage(null);
     setEmissionResults(null);
     setErrorMsg(null);
+    setSuccessMsg(null);
     stopCamera();
   };
 
@@ -217,6 +258,7 @@ export default function AiVehicleDetection({ onNavigate }) {
     setAnnotatedImage(null);
     setEmissionResults(null);
     setErrorMsg(null);
+    setSuccessMsg(null);
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -234,57 +276,82 @@ export default function AiVehicleDetection({ onNavigate }) {
     setAnnotatedImage(null);
     setEmissionResults(null);
     setErrorMsg(null);
+    setSuccessMsg(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Run AI Vehicle Detection
+  // Run Genuine AI Vehicle Detection
   const analyzeTraffic = async () => {
     if (!selectedImage) {
       setErrorMsg('Please select or capture an image first.');
       return;
     }
 
-    if (backendStatus === 'offline') {
+    // Ping backend to wake up / verify connection
+    let isLive = backendStatus === 'online';
+    if (!isLive) {
+      setAnalysisPhase('Connecting to Flask backend...');
+      isLive = await checkBackendHealth();
+    }
+
+    if (!isLive) {
       setErrorMsg(
-        'The Python Flask AI backend is offline. Please start it using "python backend/app.py" before running AI detection.'
+        'The Python Flask AI backend is offline. Please start it using "python backend/app.py" (or "npm run start-backend") before running AI detection.'
       );
       return;
     }
 
     setIsAnalyzing(true);
     setErrorMsg(null);
+    setSuccessMsg(null);
+    setAnalysisPhase('Uploading image file...');
 
     try {
       let response;
       if (selectedImage instanceof File) {
+        setAnalysisPhase('Executing YOLOv8 vehicle detection & classification...');
         const formData = new FormData();
-        formData.append('image', selectedImage);
+        formData.append('image', selectedImage, selectedImage.name || 'traffic.jpg');
         formData.append('distance', distanceKm.toString());
-        response = await fetch('/api/detect', { method: 'POST', body: formData });
+        response = await apiFetch('/api/detect', { method: 'POST', body: formData });
       } else {
         // Base64 string from camera capture
-        response = await fetch('/api/detect', {
+        setAnalysisPhase('Executing YOLOv8 vehicle detection & classification...');
+        response = await apiFetch('/api/detect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: selectedImage, distance: distanceKm }),
         });
       }
 
+      setAnalysisPhase('Quantifying CO2 and NOx emissions with ARAI/CPCB standards...');
       const result = await response.json();
 
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Failed to detect vehicles in image.');
       }
 
+      const totalFound = result.total_detected || 0;
       setDetections(result.detections || []);
       setAnnotatedImage(result.annotated_image || null);
       setEmissionResults(result.emissions || null);
       setAnalysisDate(result.analysis_date || new Date().toLocaleString());
       setViewMode('annotated');
+
+      if (totalFound > 0) {
+        setSuccessMsg(
+          `Analysis successful: ${totalFound} vehicle${totalFound === 1 ? '' : 's'} detected and classified.`
+        );
+      } else {
+        setErrorMsg(
+          'No vehicles were detected in the uploaded image. Ensure vehicles are clearly visible with adequate lighting.'
+        );
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Error occurred during AI vehicle detection.');
     } finally {
       setIsAnalyzing(false);
+      setAnalysisPhase('');
     }
   };
 
@@ -334,12 +401,12 @@ export default function AiVehicleDetection({ onNavigate }) {
   // Recalculate Emissions via Backend (or Client Fallback)
   const recalculateEmissions = async (currentDetections, dist) => {
     try {
-      const res = await fetch('/api/calculate', {
+      const res = await apiFetch('/api/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ detections: currentDetections, distance: dist }),
       });
-      if (res.ok) {
+      if (res && res.ok) {
         const data = await res.json();
         if (data.success && data.emissions) {
           setEmissionResults(data.emissions);
@@ -424,7 +491,7 @@ export default function AiVehicleDetection({ onNavigate }) {
   const handleExportCsv = async () => {
     if (!emissionResults) return;
     try {
-      const res = await fetch('/api/export-csv', {
+      const res = await apiFetch('/api/export-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -434,7 +501,7 @@ export default function AiVehicleDetection({ onNavigate }) {
         }),
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -452,7 +519,7 @@ export default function AiVehicleDetection({ onNavigate }) {
   const handleExportPdf = async () => {
     if (!emissionResults) return;
     try {
-      const res = await fetch('/api/export-pdf', {
+      const res = await apiFetch('/api/export-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -462,7 +529,7 @@ export default function AiVehicleDetection({ onNavigate }) {
         }),
       });
 
-      if (res.ok) {
+      if (res && res.ok) {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -488,35 +555,31 @@ export default function AiVehicleDetection({ onNavigate }) {
     a.click();
   };
 
-  // Pre-load a sample highway toll plaza photo for quick 1-click testing
+  // Load verified sample highway traffic photo with vehicles
   const loadSampleTollImage = async () => {
     try {
-      // Use existing hero.png from assets or create a canvas toll simulation
-      const res = await fetch('/data/chokkenahalli_traffic.csv');
-      // Set sample image from hero asset
-      const heroUrl = '/src/assets/hero.png';
-      const imgRes = await fetch(heroUrl);
-      if (imgRes.ok) {
-        const blob = await imgRes.blob();
-        const file = new File([blob], 'sample_chokkenahalli_plaza.png', { type: blob.type });
+      let res = await fetch('/sample_traffic.jpg');
+      let name = 'sample_toll_traffic.jpg';
+      if (!res.ok) {
+        res = await fetch('/src/assets/hero.png');
+        name = 'sample_traffic.png';
+      }
+      if (res.ok) {
+        const blob = await res.blob();
+        const file = new File([blob], name, { type: blob.type || 'image/jpeg' });
         setSelectedImage(file);
-        setFileName('sample_chokkenahalli_plaza.png');
+        setFileName(name);
         setImagePreview(URL.createObjectURL(blob));
         setDetections([]);
         setAnnotatedImage(null);
         setEmissionResults(null);
         setErrorMsg(null);
+        setSuccessMsg(null);
       }
     } catch (err) {
       setErrorMsg('Could not load sample toll plaza photo: ' + err.message);
     }
   };
-
-  // Aggregate Category Counts for Summary
-  const categoryCounts = {};
-  detections.forEach((d) => {
-    categoryCounts[d.category] = (categoryCounts[d.category] || 0) + 1;
-  });
 
   // Chart Data Preparation
   const chartData = (emissionResults?.categories || [])
@@ -578,7 +641,7 @@ export default function AiVehicleDetection({ onNavigate }) {
             />
             <span>
               {backendStatus === 'online'
-                ? 'Flask AI Backend: Active'
+                ? `Flask AI Backend: Active (${backendInfo?.yolo_model || 'YOLOv8'})`
                 : backendStatus === 'checking'
                 ? 'Connecting to AI Engine...'
                 : 'Flask AI Backend: Offline'}
@@ -586,31 +649,40 @@ export default function AiVehicleDetection({ onNavigate }) {
           </div>
 
           <button
-            onClick={checkBackendHealth}
+            onClick={() => checkBackendHealth(false)}
             title="Refresh backend status"
-            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800 text-slate-500 transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${backendStatus === 'checking' ? 'animate-spin text-emerald-600' : ''}`} />
           </button>
         </div>
       </div>
 
       {/* Backend Offline Troubleshooting Alert */}
       {backendStatus === 'offline' && (
-        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50/90 dark:border-amber-900/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm flex flex-col sm:flex-row items-start gap-3 shadow-xs">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="space-y-1.5 flex-1">
-            <p className="font-bold">Python AI Backend Not Detected</p>
-            <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-              The AI vehicle detection pipeline requires the local Python Flask server. To start it, run:
-            </p>
-            <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
-              python backend/app.py
+        <div className="p-4 rounded-xl border border-amber-300 bg-amber-50/90 dark:border-amber-900/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-sm flex flex-col sm:flex-row items-start justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <p className="font-bold">Python AI Backend Not Detected</p>
+              <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                The YOLO AI vehicle detection pipeline requires the local Python Flask server. To start it, run in your terminal:
+              </p>
+              <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
+                python backend/app.py
+              </div>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                Backend URL configured: <code className="font-mono">{RAW_BACKEND_URL}</code>
+              </p>
             </div>
-            <p className="text-[11px] text-amber-700 dark:text-amber-400">
-              The backend will run on <code className="font-mono">http://127.0.0.1:5000</code> and initialize YOLO object detection.
-            </p>
           </div>
+          <button
+            onClick={() => checkBackendHealth(false)}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Connection</span>
+          </button>
         </div>
       )}
 
@@ -681,7 +753,7 @@ export default function AiVehicleDetection({ onNavigate }) {
               <button
                 type="button"
                 onClick={loadSampleTollImage}
-                title="Load sample highway toll plaza photo"
+                title="Load sample highway toll plaza photo with vehicles"
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-600 dark:text-slate-400 text-xs transition-colors cursor-pointer"
               >
                 <span>Sample Toll Photo</span>
@@ -773,7 +845,7 @@ export default function AiVehicleDetection({ onNavigate }) {
                 {isAnalyzing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                    <span>Running YOLO Vehicle Detection & Categorization...</span>
+                    <span>{analysisPhase || 'Running YOLO Vehicle Detection & Categorization...'}</span>
                   </>
                 ) : (
                   <>
@@ -784,10 +856,18 @@ export default function AiVehicleDetection({ onNavigate }) {
               </button>
             </div>
 
+            {/* Status alerts */}
             {errorMsg && (
               <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-xs flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
                 <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{successMsg}</span>
               </div>
             )}
           </div>

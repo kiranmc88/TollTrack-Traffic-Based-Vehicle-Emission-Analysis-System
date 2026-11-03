@@ -110,3 +110,4 @@ def aggregate_counts_by_category(detections: list) -> dict:
             counts[cat] = counts.get(cat, 0) + 1
 
     return counts
+
