@@ -118,7 +118,40 @@ d:/5th sem/EVS/abl2/
 
 ---
 
-## ⚡ Running & Testing
+## 🌐 Online Cloud Deployment (Vercel + Render)
+
+The system is architected for completely autonomous online deployment:
+- **Frontend:** Hosted on **Vercel**
+- **AI Backend:** Hosted on **Render** (24/7 online, independent of your personal PC)
+
+### Step 1: Deploy Backend on Render
+1. Sign in to [Render Dashboard](https://dashboard.render.com) and click **New + > Web Service**.
+2. Select your GitHub repository: `https://github.com/kiranmc88/TollTrack-Traffic-Based-Vehicle-Emission-Analysis-System.git`
+3. Configure the service:
+   - **Environment:** `Python 3`
+   - **Build Command:**
+     ```bash
+     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('backend/yolov8n.pt')"
+     ```
+   - **Start Command:**
+     ```bash
+     gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --chdir backend app:app
+     ```
+   - **Health Check Path:** `/api/health`
+4. Deploy and copy your assigned HTTPS service URL:
+   `https://YOUR-RENDER-BACKEND.onrender.com`
+
+### Step 2: Configure Frontend on Vercel
+1. In your [Vercel Project Dashboard](https://vercel.com/dashboard), navigate to **Settings > Environment Variables**.
+2. Add the variable:
+   - **Name:** `VITE_AI_API_URL`
+   - **Value:** `https://YOUR-RENDER-BACKEND.onrender.com`
+3. Go to **Deployments** and click **Redeploy** (without cache).
+4. Your website is now fully operational online from any laptop, tablet, or smartphone!
+
+---
+
+## ⚡ Running & Testing Locally
 
 ### 1. Start Frontend (React + Vite)
 ```bash
