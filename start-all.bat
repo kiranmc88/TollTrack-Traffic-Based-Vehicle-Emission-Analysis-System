@@ -14,3 +14,4 @@ echo Both servers have been launched in separate terminal windows!
 echo Open http://localhost:5173 in your browser to start.
 echo.
 pause
+

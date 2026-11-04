@@ -46,30 +46,55 @@ import { DEFAULT_EMISSION_FACTORS } from '../data/emissionFactors';
 import { formatNumber, formatEmissions, formatNox } from '../utils/formatters';
 
 // Configurable backend URL from environment variables
+// Priority:
+// 1. VITE_AI_API_URL (Primary standard)
+// 2. VITE_BACKEND_URL / VITE_API_URL (Alternative fallbacks)
+// 3. Local development fallback: 'http://127.0.0.1:5000' during DEV mode
+// 4. Production fallback: '' (Unconfigured - alerts user with Vercel configuration instructions)
 const RAW_BACKEND_URL = (
+  import.meta.env.VITE_AI_API_URL ||
   import.meta.env.VITE_BACKEND_URL ||
   import.meta.env.VITE_API_URL ||
-  'http://127.0.0.1:5000'
+  (import.meta.env.DEV ? 'http://127.0.0.1:5000' : '')
 ).replace(/\/+$/, '');
 
+const IS_PROD_WITHOUT_URL = Boolean(!RAW_BACKEND_URL && !import.meta.env.DEV);
+
 /**
- * Resilient API fetch: tries the explicit backend URL first,
- * and falls back to relative path via Vite proxy if needed.
+ * Resilient API fetch:
+ * - Direct calls to RAW_BACKEND_URL (Render backend or localhost)
+ * - Dev fallback to relative path via Vite proxy if needed
+ * - Configurable request timeout (Render cold starts may take ~30-50s)
  */
-async function apiFetch(endpoint, options = {}) {
+async function apiFetch(endpoint, options = {}, timeoutMs = 60000) {
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const fullUrl = `${RAW_BACKEND_URL}${path}`;
+  const fullUrl = RAW_BACKEND_URL ? `${RAW_BACKEND_URL}${path}` : path;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const fetchOptions = {
+    ...options,
+    signal: options.signal || controller.signal,
+  };
 
   try {
-    const res = await fetch(fullUrl, options);
+    const res = await fetch(fullUrl, fetchOptions);
+    clearTimeout(timeoutId);
     return res;
   } catch (directErr) {
-    try {
-      const relRes = await fetch(path, options);
-      return relRes;
-    } catch {
-      throw directErr;
+    clearTimeout(timeoutId);
+
+    // If running in Vite dev server and direct connection failed, try relative path proxy
+    if (import.meta.env.DEV && RAW_BACKEND_URL) {
+      try {
+        const relRes = await fetch(path, options);
+        return relRes;
+      } catch {
+        throw directErr;
+      }
     }
+    throw directErr;
   }
 }
 
@@ -124,7 +149,7 @@ export default function AiVehicleDetection({ onNavigate }) {
   const [successMsg, setSuccessMsg] = useState(null);
 
   // Backend Health
-  const [backendStatus, setBackendStatus] = useState('checking'); // 'online' | 'offline' | 'checking'
+  const [backendStatus, setBackendStatus] = useState(IS_PROD_WITHOUT_URL ? 'unconfigured' : 'checking'); // 'online' | 'offline' | 'checking' | 'waking' | 'unconfigured'
   const [backendInfo, setBackendInfo] = useState(null);
 
   // Camera Modal State
@@ -145,12 +170,27 @@ export default function AiVehicleDetection({ onNavigate }) {
   }, []);
 
   const checkBackendHealth = async (silent = false) => {
+    if (IS_PROD_WITHOUT_URL) {
+      setBackendStatus('unconfigured');
+      return false;
+    }
+
     if (!silent) setBackendStatus('checking');
+
+    let wakingTimer = null;
+    if (!silent) {
+      wakingTimer = setTimeout(() => {
+        setBackendStatus('waking');
+      }, 3000);
+    }
+
     try {
       const res = await apiFetch('/api/health', {
         method: 'GET',
-        signal: AbortSignal.timeout(3500),
-      });
+      }, 20000);
+
+      if (wakingTimer) clearTimeout(wakingTimer);
+
       if (res && res.ok) {
         const data = await res.json();
         setBackendStatus('online');
@@ -161,6 +201,7 @@ export default function AiVehicleDetection({ onNavigate }) {
       setBackendStatus('offline');
       return false;
     } catch {
+      if (wakingTimer) clearTimeout(wakingTimer);
       setBackendStatus('offline');
       return false;
     }
@@ -287,17 +328,30 @@ export default function AiVehicleDetection({ onNavigate }) {
       return;
     }
 
+    if (IS_PROD_WITHOUT_URL) {
+      setErrorMsg(
+        'Backend URL is not configured. Please set VITE_AI_API_URL in your Vercel Project Settings > Environment Variables, and redeploy.'
+      );
+      return;
+    }
+
     // Ping backend to wake up / verify connection
     let isLive = backendStatus === 'online';
     if (!isLive) {
-      setAnalysisPhase('Connecting to Flask backend...');
+      setAnalysisPhase('Connecting to Flask AI backend (waking up cloud server if asleep)...');
       isLive = await checkBackendHealth();
     }
 
     if (!isLive) {
-      setErrorMsg(
-        'The Python Flask AI backend is offline. Please start it using "python backend/app.py" (or "npm run start-backend") before running AI detection.'
-      );
+      if (RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com')) {
+        setErrorMsg(
+          `The Render backend at ${RAW_BACKEND_URL} is currently asleep or starting up. Render free tier takes ~30–50s to wake up on the first request. Please wait a moment and click "Retry Connection".`
+        );
+      } else {
+        setErrorMsg(
+          `The Python Flask AI backend is offline (${RAW_BACKEND_URL || 'localhost:5000'}). Please start it using "python backend/app.py" or check your Vercel environment variables.`
+        );
+      }
       return;
     }
 
@@ -313,7 +367,7 @@ export default function AiVehicleDetection({ onNavigate }) {
         const formData = new FormData();
         formData.append('image', selectedImage, selectedImage.name || 'traffic.jpg');
         formData.append('distance', distanceKm.toString());
-        response = await apiFetch('/api/detect', { method: 'POST', body: formData });
+        response = await apiFetch('/api/detect', { method: 'POST', body: formData }, 90000);
       } else {
         // Base64 string from camera capture
         setAnalysisPhase('Executing YOLOv8 vehicle detection & classification...');
@@ -321,7 +375,7 @@ export default function AiVehicleDetection({ onNavigate }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: selectedImage, distance: distanceKm }),
-        });
+        }, 90000);
       }
 
       setAnalysisPhase('Quantifying CO2 and NOx emissions with ARAI/CPCB standards...');
@@ -625,8 +679,10 @@ export default function AiVehicleDetection({ onNavigate }) {
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${
               backendStatus === 'online'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-                : backendStatus === 'checking'
+                : backendStatus === 'waking' || backendStatus === 'checking'
                 ? 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                : backendStatus === 'unconfigured'
+                ? 'bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800'
                 : 'bg-red-50 text-red-700 border-red-300 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800'
             }`}
           >
@@ -634,16 +690,22 @@ export default function AiVehicleDetection({ onNavigate }) {
               className={`w-2 h-2 rounded-full ${
                 backendStatus === 'online'
                   ? 'bg-emerald-500 animate-pulse'
-                  : backendStatus === 'checking'
+                  : backendStatus === 'waking' || backendStatus === 'checking'
                   ? 'bg-amber-500 animate-ping'
+                  : backendStatus === 'unconfigured'
+                  ? 'bg-sky-500'
                   : 'bg-red-500'
               }`}
             />
             <span>
               {backendStatus === 'online'
                 ? `Flask AI Backend: Active (${backendInfo?.yolo_model || 'YOLOv8'})`
+                : backendStatus === 'waking'
+                ? 'Waking up Cloud Backend (~30s)...'
                 : backendStatus === 'checking'
                 ? 'Connecting to AI Engine...'
+                : backendStatus === 'unconfigured'
+                ? 'Flask Backend: Unconfigured in Vercel'
                 : 'Flask AI Backend: Offline'}
             </span>
           </div>
@@ -653,10 +715,43 @@ export default function AiVehicleDetection({ onNavigate }) {
             title="Refresh backend status"
             className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 dark:border-slate-800 dark:hover:bg-slate-800 text-slate-500 transition-colors cursor-pointer"
           >
-            <RefreshCw className={`w-4 h-4 ${backendStatus === 'checking' ? 'animate-spin text-emerald-600' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${backendStatus === 'checking' || backendStatus === 'waking' ? 'animate-spin text-emerald-600' : ''}`} />
           </button>
         </div>
       </div>
+
+      {/* Backend Unconfigured in Vercel Notice */}
+      {backendStatus === 'unconfigured' && (
+        <div className="p-4 rounded-xl border border-sky-300 bg-sky-50/90 dark:border-sky-900/60 dark:bg-sky-950/40 text-sky-950 dark:text-sky-200 text-sm flex flex-col sm:flex-row items-start justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <p className="font-bold">Vercel Deployment: Render AI Backend URL Needed</p>
+              <p className="text-xs text-sky-900 dark:text-sky-300 leading-relaxed">
+                Your frontend is live on Vercel, but the AI vehicle detection service requires the Python Flask backend hosted on Render.
+              </p>
+              <ol className="list-decimal list-inside text-xs space-y-1 text-sky-800 dark:text-sky-300 font-medium">
+                <li>Deploy this repository's backend on <strong>Render.com</strong> (Web Service with Python or Docker).</li>
+                <li>Copy your live Render backend URL (e.g. <code className="font-mono">https://YOUR-RENDER-BACKEND.onrender.com</code>).</li>
+                <li>In <strong>Vercel &gt; Settings &gt; Environment Variables</strong>, add:</li>
+              </ol>
+              <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
+                VITE_AI_API_URL=https://YOUR-RENDER-BACKEND.onrender.com
+              </div>
+              <p className="text-[11px] text-sky-700 dark:text-sky-400">
+                After saving the environment variable, trigger a <strong>Redeploy</strong> in Vercel.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => checkBackendHealth(false)}
+            className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Recheck</span>
+          </button>
+        </div>
+      )}
 
       {/* Backend Offline Troubleshooting Alert */}
       {backendStatus === 'offline' && (
@@ -666,14 +761,22 @@ export default function AiVehicleDetection({ onNavigate }) {
             <div className="space-y-1.5">
               <p className="font-bold">Python AI Backend Not Detected</p>
               <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                The YOLO AI vehicle detection pipeline requires the local Python Flask server. To start it, run in your terminal:
+                Target Backend URL: <code className="font-mono font-bold">{RAW_BACKEND_URL || 'http://127.0.0.1:5000'}</code>
               </p>
-              <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
-                python backend/app.py
-              </div>
-              <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                Backend URL configured: <code className="font-mono">{RAW_BACKEND_URL}</code>
-              </p>
+              {RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com') ? (
+                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                  Render free-tier web services sleep when inactive. The instance is currently spinning up (cold start ~30–50s). Please wait a few seconds and click <strong>Retry Connection</strong>.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    To start the backend locally on Windows, execute in your terminal:
+                  </p>
+                  <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
+                    python backend/app.py
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <button

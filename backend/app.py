@@ -7,6 +7,10 @@ Cross-Origin: Enabled for Vite frontend
 import os
 import sys
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 # Ensure site-packages with ultralytics, cv2, and reportlab are accessible
 for extra_path in [
     os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
@@ -35,27 +39,49 @@ from report_generator import generate_csv_report, generate_pdf_report
 
 app = Flask(__name__)
 # Robust CORS configuration for Vite dev server, previews, and direct browser requests
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=False)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
 
 
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, HEAD'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
     return response
+
+
+@app.route('/', methods=['GET'])
+def root_index():
+    """Root endpoint for status check and deployment validation."""
+    return jsonify({
+        'name': 'TollTrack AI Vehicle Detection & Emission Calculator API',
+        'status': 'online',
+        'health_check': '/api/health',
+        'endpoints': {
+            'health': '/api/health',
+            'detect': '/api/detect',
+            'export_pdf': '/api/export-pdf',
+            'export_csv': '/api/export-csv'
+        },
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
+
+@app.route('/api', methods=['GET'])
+def api_index():
+    return root_index()
 
 
 @app.route('/api/<path:subpath>', methods=['OPTIONS'])
 def handle_options(subpath):
     response = make_response('', 204)
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, HEAD'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
     return response
 
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/health', methods=['GET', 'HEAD'])
 def health_check():
     """
     Health check endpoint returning system status and YOLO model availability.

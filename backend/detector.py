@@ -8,6 +8,10 @@ Strictly adheres to real AI inference - NEVER returns fabricated detections.
 import os
 import sys
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 # Ensure site-packages with ultralytics, cv2, and reportlab are accessible
 for extra_path in [
     os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
@@ -51,11 +55,26 @@ class VehicleDetector:
         """Attempts to load the YOLO model."""
         try:
             from ultralytics import YOLO
+            # Locate model file if already downloaded locally
+            model_target = self.model_name
+            if not os.path.isabs(model_target):
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                candidates = [
+                    os.environ.get('YOLO_MODEL_PATH'),
+                    os.path.join(base_dir, model_target),
+                    os.path.join(base_dir, '..', model_target),
+                    model_target
+                ]
+                for c in candidates:
+                    if c and os.path.isfile(c):
+                        model_target = c
+                        break
+
             # Load pretrained YOLO model (downloads standard YOLOv8n weights automatically if needed)
-            self.model = YOLO(self.model_name)
+            self.model = YOLO(model_target)
             self.model_loaded = True
             self.load_error = None
-            print(f"[TollTrack AI] YOLO model '{self.model_name}' successfully loaded.")
+            print(f"[TollTrack AI] YOLO model '{model_target}' successfully loaded.")
         except Exception as e:
             self.model_loaded = False
             self.load_error = str(e)
