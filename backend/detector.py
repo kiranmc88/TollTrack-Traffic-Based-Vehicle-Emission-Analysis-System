@@ -12,14 +12,6 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
-# Ensure site-packages with ultralytics, cv2, and reportlab are accessible
-for extra_path in [
-    os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
-    r'C:\Users\kiran kumar\miniconda3\Lib\site-packages',
-]:
-    if os.path.isdir(extra_path) and extra_path not in sys.path:
-        sys.path.insert(0, extra_path)
-
 import cv2
 import numpy as np
 from classifier import map_coco_class, AXLE_CLASSIFICATION_DISCLAIMER
@@ -42,49 +34,63 @@ VEHICLE_COCO_CLASSES = {'car', 'motorcycle', 'bus', 'truck'}
 VEHICLE_COCO_IDS = {2, 3, 5, 7}
 
 
+def resolve_model_path(model_name: str = 'yolov8n.pt') -> str:
+    """
+    Resolves the YOLO model path reliably across local, Docker, and Render environments.
+    Checks:
+      1. YOLO_MODEL_PATH environment variable (if set and file exists)
+      2. Repository root (parent of backend/): os.path.join(CURRENT_DIR, '..', model_name)
+      3. backend/ directory: os.path.join(CURRENT_DIR, model_name)
+      4. Current working directory: os.path.join(os.getcwd(), model_name)
+      5. Standard model name for Ultralytics cache lookup or auto-download
+    """
+    env_path = os.environ.get('YOLO_MODEL_PATH')
+    if env_path:
+        for candidate in [env_path, os.path.join(CURRENT_DIR, env_path), os.path.join(os.getcwd(), env_path)]:
+            if os.path.isfile(candidate):
+                return os.path.abspath(candidate)
+
+    candidates = [
+        os.path.join(CURRENT_DIR, '..', model_name),
+        os.path.join(CURRENT_DIR, model_name),
+        os.path.join(os.getcwd(), model_name),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+
+    # Standard model name for Ultralytics cache lookup or automatic download
+    return model_name
+
+
 class VehicleDetector:
     def __init__(self, model_name: str = 'yolov8n.pt', confidence_threshold: float = 0.25):
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
+        self.resolved_model_path = None
         self.model = None
         self.model_loaded = False
         self.load_error = None
+        # Load exactly once at startup
         self._init_model()
 
     def _init_model(self):
-        """Attempts to load the YOLO model."""
+        """Attempts to load the YOLO model once at startup."""
         try:
             from ultralytics import YOLO
-            # Locate model file if already downloaded locally
-            model_target = self.model_name
-            if not os.path.isabs(model_target):
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-                candidates = [
-                    os.environ.get('YOLO_MODEL_PATH'),
-                    os.path.join(base_dir, model_target),
-                    os.path.join(base_dir, '..', model_target),
-                    model_target
-                ]
-                for c in candidates:
-                    if c and os.path.isfile(c):
-                        model_target = c
-                        break
-
-            # Load pretrained YOLO model (downloads standard YOLOv8n weights automatically if needed)
-            self.model = YOLO(model_target)
+            self.resolved_model_path = resolve_model_path(self.model_name)
+            self.model = YOLO(self.resolved_model_path)
             self.model_loaded = True
             self.load_error = None
-            print(f"[TollTrack AI] YOLO model '{model_target}' successfully loaded.")
+            print(f"[TollTrack AI] YOLO model successfully loaded from '{self.resolved_model_path}'.")
         except Exception as e:
             self.model_loaded = False
             self.load_error = str(e)
-            print(f"[TollTrack AI] Warning: Could not initialize YOLO model: {e}")
+            self.model = None
+            print(f"[TollTrack AI] Error initializing YOLO model '{self.model_name}': {e}")
 
     def is_ready(self) -> tuple[bool, str]:
-        """Returns whether the detector is ready and any error message."""
-        if not self.model_loaded:
-            # Try reloading once in case dependencies just finished installing
-            self._init_model()
+        """Returns whether the detector is ready and any error message without re-triggering init."""
         return self.model_loaded, self.load_error or ""
 
     def detect_vehicles(self, cv2_image: np.ndarray, conf_threshold: float = None) -> dict:
@@ -98,15 +104,14 @@ class VehicleDetector:
                 'category_counts': dict,
                 'axle_disclaimer': str
             }
-        Raises Exception if model is not loaded or inference fails.
+        Raises RuntimeError if model is not loaded or inference fails.
+        NEVER returns fake or fabricated detection results.
         """
-        if not self.model_loaded:
-            self._init_model()
-            if not self.model_loaded:
-                raise RuntimeError(
-                    f"AI Detection Model is not available: {self.load_error}. "
-                    f"Ensure ultralytics and torch are installed."
-                )
+        if not self.model_loaded or self.model is None:
+            raise RuntimeError(
+                f"AI Detection Model is not available: {self.load_error or 'Model not loaded'}. "
+                f"Verify that ultralytics and torch are installed and model weights are accessible."
+            )
 
         if cv2_image is None or cv2_image.size == 0:
             raise ValueError("Invalid image input for vehicle detection.")

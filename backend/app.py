@@ -11,14 +11,6 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
-# Ensure site-packages with ultralytics, cv2, and reportlab are accessible
-for extra_path in [
-    os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
-    r'C:\Users\kiran kumar\miniconda3\Lib\site-packages',
-]:
-    if os.path.isdir(extra_path) and extra_path not in sys.path:
-        sys.path.insert(0, extra_path)
-
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, Response, make_response
 from flask_cors import CORS
@@ -85,14 +77,26 @@ def handle_options(subpath):
 def health_check():
     """
     Health check endpoint returning system status and YOLO model availability.
+    Returns:
+      {
+        "status": "healthy" | "degraded",
+        "backend": "TollTrack AI Python Backend",
+        "yolo_model": "yolov8n.pt",
+        "model_loaded": true | false,
+        "model_error": "...",
+        "ai_ready": true | false
+      }
     """
     model_ready, model_err = detector_instance.is_ready()
+    status_str = "healthy" if model_ready else "degraded"
+
     return jsonify({
-        'status': 'healthy',
+        'status': status_str,
         'backend': 'TollTrack AI Python Backend',
         'yolo_model': detector_instance.model_name,
-        'model_loaded': model_ready,
-        'model_error': model_err,
+        'model_loaded': bool(model_ready),
+        'model_error': str(model_err) if model_err else "",
+        'ai_ready': bool(model_ready),
         'supported_categories': VALID_TOLLTRACK_CATEGORIES,
         'axle_disclaimer': AXLE_CLASSIFICATION_DISCLAIMER,
         'timestamp': datetime.now().isoformat()

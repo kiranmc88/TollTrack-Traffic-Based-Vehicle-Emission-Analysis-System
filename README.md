@@ -131,7 +131,7 @@ The system is architected for completely autonomous online deployment:
    - **Environment:** `Python 3`
    - **Build Command:**
      ```bash
-     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('backend/yolov8n.pt')"
+     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
      ```
    - **Start Command:**
      ```bash

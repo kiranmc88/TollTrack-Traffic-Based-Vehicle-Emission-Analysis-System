@@ -11,13 +11,9 @@ import re
 import io
 import base64
 
-# Ensure site-packages with cv2 and PIL are accessible
-for extra_path in [
-    os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
-    r'C:\Users\kiran kumar\miniconda3\Lib\site-packages',
-]:
-    if os.path.isdir(extra_path) and extra_path not in sys.path:
-        sys.path.insert(0, extra_path)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
 
 import numpy as np
 import cv2

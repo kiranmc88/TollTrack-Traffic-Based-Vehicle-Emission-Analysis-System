@@ -193,10 +193,25 @@ export default function AiVehicleDetection({ onNavigate }) {
 
       if (res && res.ok) {
         const data = await res.json();
-        setBackendStatus('online');
         setBackendInfo(data);
-        if (!silent) setErrorMsg(null);
-        return true;
+
+        // Mark online ONLY when data.model_loaded === true (or data.ai_ready === true)
+        if (data && (data.model_loaded === true || data.ai_ready === true)) {
+          setBackendStatus('online');
+          if (!silent) setErrorMsg(null);
+          return true;
+        } else {
+          // Backend is reachable, but YOLO model is not loaded
+          setBackendStatus('model_error');
+          if (!silent) {
+            setErrorMsg(
+              data.model_error
+                ? `AI Model Unavailable: ${data.model_error}`
+                : 'Flask server is online, but the YOLO model failed to load. AI analysis cannot proceed.'
+            );
+          }
+          return false;
+        }
       }
       setBackendStatus('offline');
       return false;
@@ -338,12 +353,18 @@ export default function AiVehicleDetection({ onNavigate }) {
     // Ping backend to wake up / verify connection
     let isLive = backendStatus === 'online';
     if (!isLive) {
-      setAnalysisPhase('Connecting to Flask AI backend (waking up cloud server if asleep)...');
+      setAnalysisPhase('Connecting to Flask AI backend (verifying YOLO model readiness)...');
       isLive = await checkBackendHealth();
     }
 
     if (!isLive) {
-      if (RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com')) {
+      if (backendStatus === 'model_error') {
+        setErrorMsg(
+          backendInfo?.model_error
+            ? `AI Model Unavailable: ${backendInfo.model_error}. The Flask backend is reachable, but the YOLO detection model is not loaded. Cannot run vehicle detection.`
+            : 'The Flask backend is reachable, but the YOLO model is not loaded. Please verify the AI model configuration.'
+        );
+      } else if (RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com')) {
         setErrorMsg(
           `The Render backend at ${RAW_BACKEND_URL} is currently asleep or starting up. Render free tier takes ~30–50s to wake up on the first request. Please wait a moment and click "Retry Connection".`
         );
@@ -679,6 +700,8 @@ export default function AiVehicleDetection({ onNavigate }) {
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border ${
               backendStatus === 'online'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                : backendStatus === 'model_error'
+                ? 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
                 : backendStatus === 'waking' || backendStatus === 'checking'
                 ? 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
                 : backendStatus === 'unconfigured'
@@ -690,6 +713,8 @@ export default function AiVehicleDetection({ onNavigate }) {
               className={`w-2 h-2 rounded-full ${
                 backendStatus === 'online'
                   ? 'bg-emerald-500 animate-pulse'
+                  : backendStatus === 'model_error'
+                  ? 'bg-rose-500'
                   : backendStatus === 'waking' || backendStatus === 'checking'
                   ? 'bg-amber-500 animate-ping'
                   : backendStatus === 'unconfigured'
@@ -700,6 +725,8 @@ export default function AiVehicleDetection({ onNavigate }) {
             <span>
               {backendStatus === 'online'
                 ? `Flask AI Backend: Active (${backendInfo?.yolo_model || 'YOLOv8'})`
+                : backendStatus === 'model_error'
+                ? 'Flask AI Backend: Model Not Loaded'
                 : backendStatus === 'waking'
                 ? 'Waking up Cloud Backend (~30s)...'
                 : backendStatus === 'checking'
@@ -749,6 +776,37 @@ export default function AiVehicleDetection({ onNavigate }) {
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Recheck</span>
+          </button>
+        </div>
+      )}
+
+      {/* Backend Reachable but Model Not Loaded Notice */}
+      {backendStatus === 'model_error' && (
+        <div className="p-4 rounded-xl border border-rose-300 bg-rose-50/90 dark:border-rose-900/60 dark:bg-rose-950/40 text-rose-950 dark:text-rose-200 text-sm flex flex-col sm:flex-row items-start justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <p className="font-bold">Backend Reachable, But YOLO AI Model Is Not Loaded</p>
+              <p className="text-xs text-rose-900 dark:text-rose-300 leading-relaxed">
+                The Python Flask backend is running, but the YOLO vehicle detection model could not be loaded into memory.
+              </p>
+              {backendInfo?.model_error && (
+                <div className="p-2.5 rounded-lg bg-slate-900 text-rose-300 font-mono text-xs select-all break-all">
+                  Error: {backendInfo.model_error}
+                </div>
+              )}
+              <p className="text-[11px] text-rose-700 dark:text-rose-400">
+                Backend URL: <code className="font-mono font-bold">{RAW_BACKEND_URL || 'http://127.0.0.1:5000'}</code>.
+                Verify that <code className="font-mono">ultralytics</code> and <code className="font-mono">torch</code> dependencies are installed and model weights are accessible.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => checkBackendHealth(false)}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Model Check</span>
           </button>
         </div>
       )}

@@ -21,7 +21,7 @@ This backend is designed to run completely online on [Render](https://render.com
    - **Environment**: `Python 3`
    - **Build Command**:
      ```bash
-     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('backend/yolov8n.pt')"
+     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
      ```
    - **Start Command**:
      ```bash
@@ -44,7 +44,9 @@ Expected JSON:
   "status": "healthy",
   "backend": "TollTrack AI Python Backend",
   "yolo_model": "yolov8n.pt",
-  "model_loaded": true
+  "model_loaded": true,
+  "model_error": "",
+  "ai_ready": true
 }
 ```
 

@@ -13,14 +13,6 @@ import os
 import sys
 import numpy as np
 
-# Ensure dependencies path
-for extra_path in [
-    os.path.expanduser(r'~\miniconda3\Lib\site-packages'),
-    r'C:\Users\kiran kumar\miniconda3\Lib\site-packages',
-]:
-    if os.path.isdir(extra_path) and extra_path not in sys.path:
-        sys.path.insert(0, extra_path)
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 import cv2
@@ -112,11 +104,17 @@ def test_flask_endpoints():
     print("[6/6] Testing Flask API Routes...")
     client = app.test_client()
 
-    # 1. Health check
+    # 1. Health check - verifies FIX 2 schema
     h_res = client.get('/api/health')
     assert h_res.status_code == 200
     h_data = h_res.get_json()
-    assert h_data['model_loaded'] == True
+    assert h_data['status'] == 'healthy'
+    assert h_data['backend'] == 'TollTrack AI Python Backend'
+    assert h_data['model_loaded'] is True
+    assert h_data['ai_ready'] is True
+    assert h_data['model_error'] == ""
+    assert 'yolo_model' in h_data
+    assert 'supported_categories' in h_data
 
     # 2. Recalculate
     c_res = client.post('/api/calculate', json={
@@ -144,7 +142,20 @@ def test_flask_endpoints():
     assert csv_res.status_code == 200
     assert csv_res.mimetype == 'text/csv'
 
-    print("      All Flask endpoints (/api/health, /api/calculate, /api/export-pdf, /api/export-csv) passed.")
+    # 5. Full detection endpoint inference
+    test_img = np.zeros((300, 400, 3), dtype=np.uint8)
+    d_res = client.post('/api/detect', json={
+        'image': encode_image_to_base64(test_img),
+        'distance': 50
+    })
+    assert d_res.status_code == 200
+    d_data = d_res.get_json()
+    assert d_data['success'] is True
+    assert 'detections' in d_data
+    assert 'annotated_image' in d_data
+    assert 'emissions' in d_data
+
+    print("      All Flask endpoints (/api/health, /api/calculate, /api/export-pdf, /api/export-csv, /api/detect) passed.")
 
 
 if __name__ == '__main__':
