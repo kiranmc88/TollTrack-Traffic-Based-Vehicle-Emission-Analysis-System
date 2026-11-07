@@ -118,36 +118,20 @@ d:/5th sem/EVS/abl2/
 
 ---
 
-## 🌐 Online Cloud Deployment (Vercel + Render)
+## 🌐 Online Cloud Deployment Options
 
-The system is architected for completely autonomous online deployment:
-- **Frontend:** Hosted on **Vercel**
-- **AI Backend:** Hosted on **Render** (24/7 online, independent of your personal PC)
+The system can be deployed online using either 100% free Hugging Face Spaces or custom backend hosting:
 
-### Step 1: Deploy Backend on Render
-1. Sign in to [Render Dashboard](https://dashboard.render.com) and click **New + > Web Service**.
-2. Select your GitHub repository: `https://github.com/kiranmc88/TollTrack-Traffic-Based-Vehicle-Emission-Analysis-System.git`
-3. Configure the service:
-   - **Environment:** `Python 3`
-   - **Build Command:**
-     ```bash
-     pip install --upgrade pip && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r backend/requirements.txt && python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
-     ```
-   - **Start Command:**
-     ```bash
-     gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --chdir backend app:app
-     ```
-   - **Health Check Path:** `/api/health`
-4. Deploy and copy your assigned HTTPS service URL:
-   `https://YOUR-RENDER-BACKEND.onrender.com`
-
-### Step 2: Configure Frontend on Vercel
-1. In your [Vercel Project Dashboard](https://vercel.com/dashboard), navigate to **Settings > Environment Variables**.
-2. Add the variable:
-   - **Name:** `VITE_AI_API_URL`
-   - **Value:** `https://YOUR-RENDER-BACKEND.onrender.com`
-3. Go to **Deployments** and click **Redeploy** (without cache).
-4. Your website is now fully operational online from any laptop, tablet, or smartphone!
+### Option A: Free Hugging Face Spaces (Recommended — $0 Forever)
+The `hf_space/` directory contains a complete, self-contained Gradio + FastAPI deployment with ZeroGPU compatibility and CPU fallback.
+1. Create a free Space on [Hugging Face](https://huggingface.co/new-space) (SDK: **Gradio**, Hardware: **ZeroGPU** or **CPU Basic (Free)**).
+2. Upload the contents of `hf_space/` to your Space repository.
+3. Copy your public Space URL: `https://<YOUR_USERNAME>-<SPACE_NAME>.hf.space`.
+4. In your **Vercel Project Settings > Environment Variables**, add:
+   ```
+   VITE_AI_API_URL=https://<YOUR_USERNAME>-<SPACE_NAME>.hf.space
+   ```
+5. Redeploy on Vercel. Your AI detection is completely live online for free!
 
 ---
 

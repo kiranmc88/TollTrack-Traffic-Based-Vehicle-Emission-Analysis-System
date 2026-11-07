@@ -1,16 +1,12 @@
 import React from 'react';
 import {
   Zap,
-  AlertTriangle,
   Wind,
   Activity,
   TrendingUp,
   BarChart2,
-  PieChart as PieIcon,
-  ShieldCheck,
-  HeartPulse,
-  Info,
   Atom,
+  HeartPulse,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -20,9 +16,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
-  PieChart,
-  Pie,
   Cell,
 } from 'recharts';
 import { useTraffic } from '../hooks/useTrafficData';
@@ -31,6 +24,7 @@ import DistanceControl from '../components/DistanceControl';
 import NoticeBanner from '../components/NoticeBanner';
 import KPICard from '../components/KPICard';
 import DataTransparencyCard from '../components/DataTransparencyCard';
+import InteractivePieChart from '../components/InteractivePieChart';
 
 const COLORS = [
   '#10b981', // Car (Emerald)
@@ -260,58 +254,14 @@ export default function NOxAnalysis({ onNavigate }) {
           </div>
         </div>
 
-        {/* Pie Chart: Percentage Contribution of NOx */}
-        <div className="rounded-xl border border-slate-200/80 bg-white dark:border-slate-800 dark:bg-slate-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                NOx Contribution Percentage by Category
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Multi-axle trucks and heavy freight drive the vast majority of NOx pollution
-              </p>
-            </div>
-            <PieIcon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-          </div>
-
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={95}
-                  dataKey="value"
-                  label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
-                  labelLine={false}
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`nox-pie-cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(val, name, item) => [
-                    `${formatNumber(val, 2)} kg (${formatPercent(item.payload.share)})`,
-                    name,
-                  ]}
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    borderColor: '#334155',
-                    color: '#f8fafc',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                  }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  formatter={(val) => <span className="text-xs text-slate-700 dark:text-slate-300">{val}</span>}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        {/* Interactive Pie Chart: Percentage Contribution of NOx */}
+        <InteractivePieChart
+          initialData={pieData}
+          defaultTitle="NOx Contribution Percentage by Category"
+          defaultSubtitle="Multi-axle trucks and heavy freight drive the vast majority of NOx pollution"
+          unit="kg NOx"
+          badgeColor="amber"
+        />
       </div>
 
       {/* Detailed Category-wise NOx Emission Table */}

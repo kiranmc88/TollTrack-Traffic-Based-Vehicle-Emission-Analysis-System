@@ -364,13 +364,17 @@ export default function AiVehicleDetection({ onNavigate }) {
             ? `AI Model Unavailable: ${backendInfo.model_error}. The Flask backend is reachable, but the YOLO detection model is not loaded. Cannot run vehicle detection.`
             : 'The Flask backend is reachable, but the YOLO model is not loaded. Please verify the AI model configuration.'
         );
+      } else if (RAW_BACKEND_URL && RAW_BACKEND_URL.includes('.hf.space')) {
+        setErrorMsg(
+          `The Hugging Face Space at ${RAW_BACKEND_URL} is currently booting or waking up (~15–30s). Please wait a few seconds and click "Retry Connection".`
+        );
       } else if (RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com')) {
         setErrorMsg(
-          `The Render backend at ${RAW_BACKEND_URL} is currently asleep or starting up. Render free tier takes ~30–50s to wake up on the first request. Please wait a moment and click "Retry Connection".`
+          `The backend at ${RAW_BACKEND_URL} is currently asleep or starting up. Please wait a moment and click "Retry Connection".`
         );
       } else {
         setErrorMsg(
-          `The Python Flask AI backend is offline (${RAW_BACKEND_URL || 'localhost:5000'}). Please start it using "python backend/app.py" or check your Vercel environment variables.`
+          `The AI backend is offline (${RAW_BACKEND_URL || 'localhost:5000'}). Please start the backend or verify VITE_AI_API_URL in your Vercel project environment variables.`
         );
       }
       return;
@@ -724,16 +728,16 @@ export default function AiVehicleDetection({ onNavigate }) {
             />
             <span>
               {backendStatus === 'online'
-                ? `Flask AI Backend: Active (${backendInfo?.yolo_model || 'YOLOv8'})`
+                ? `AI Engine: Active (${backendInfo?.yolo_model || 'YOLOv8'})`
                 : backendStatus === 'model_error'
-                ? 'Flask AI Backend: Model Not Loaded'
+                ? 'AI Engine: Model Not Loaded'
                 : backendStatus === 'waking'
-                ? 'Waking up Cloud Backend (~30s)...'
+                ? 'Waking up Cloud Backend (~20s)...'
                 : backendStatus === 'checking'
                 ? 'Connecting to AI Engine...'
                 : backendStatus === 'unconfigured'
-                ? 'Flask Backend: Unconfigured in Vercel'
-                : 'Flask AI Backend: Offline'}
+                ? 'AI Backend: Unconfigured in Vercel'
+                : 'AI Backend: Offline'}
             </span>
           </div>
 
@@ -753,20 +757,20 @@ export default function AiVehicleDetection({ onNavigate }) {
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
             <div className="space-y-1.5">
-              <p className="font-bold">Vercel Deployment: Render AI Backend URL Needed</p>
+              <p className="font-bold">Vercel Deployment: Free Hugging Face AI Backend URL Needed</p>
               <p className="text-xs text-sky-900 dark:text-sky-300 leading-relaxed">
-                Your frontend is live on Vercel, but the AI vehicle detection service requires the Python Flask backend hosted on Render.
+                Your frontend is live on Vercel. Connect your free Hugging Face Gradio Space (or local backend) to activate AI vehicle detection:
               </p>
               <ol className="list-decimal list-inside text-xs space-y-1 text-sky-800 dark:text-sky-300 font-medium">
-                <li>Deploy this repository's backend on <strong>Render.com</strong> (Web Service with Python or Docker).</li>
-                <li>Copy your live Render backend URL (e.g. <code className="font-mono">https://YOUR-RENDER-BACKEND.onrender.com</code>).</li>
+                <li>Create a 100% free Space on <strong>Hugging Face</strong> using the files in the <code className="font-mono">hf_space/</code> directory.</li>
+                <li>Copy your public Space URL (e.g. <code className="font-mono">https://YOUR_HF_USERNAME-SPACE_NAME.hf.space</code>).</li>
                 <li>In <strong>Vercel &gt; Settings &gt; Environment Variables</strong>, add:</li>
               </ol>
               <div className="p-2 rounded-lg bg-slate-900 text-emerald-400 font-mono text-xs select-all">
-                VITE_AI_API_URL=https://YOUR-RENDER-BACKEND.onrender.com
+                VITE_AI_API_URL=https://YOUR_HF_USERNAME-SPACE_NAME.hf.space
               </div>
               <p className="text-[11px] text-sky-700 dark:text-sky-400">
-                After saving the environment variable, trigger a <strong>Redeploy</strong> in Vercel.
+                After saving the environment variable, trigger a <strong>Redeploy</strong> in Vercel to activate online AI vehicle detection.
               </p>
             </div>
           </div>
@@ -788,7 +792,7 @@ export default function AiVehicleDetection({ onNavigate }) {
             <div className="space-y-1.5">
               <p className="font-bold">Backend Reachable, But YOLO AI Model Is Not Loaded</p>
               <p className="text-xs text-rose-900 dark:text-rose-300 leading-relaxed">
-                The Python Flask backend is running, but the YOLO vehicle detection model could not be loaded into memory.
+                The AI backend is running, but the YOLO vehicle detection model could not be loaded into memory.
               </p>
               {backendInfo?.model_error && (
                 <div className="p-2.5 rounded-lg bg-slate-900 text-rose-300 font-mono text-xs select-all break-all">
@@ -817,13 +821,17 @@ export default function AiVehicleDetection({ onNavigate }) {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="space-y-1.5">
-              <p className="font-bold">Python AI Backend Not Detected</p>
+              <p className="font-bold">AI Backend Not Detected</p>
               <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
                 Target Backend URL: <code className="font-mono font-bold">{RAW_BACKEND_URL || 'http://127.0.0.1:5000'}</code>
               </p>
-              {RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com') ? (
+              {RAW_BACKEND_URL && RAW_BACKEND_URL.includes('.hf.space') ? (
                 <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                  Render free-tier web services sleep when inactive. The instance is currently spinning up (cold start ~30–50s). Please wait a few seconds and click <strong>Retry Connection</strong>.
+                  Hugging Face Spaces may sleep when inactive. The instance is currently waking up (~15–30s). Please wait a few seconds and click <strong>Retry Connection</strong>.
+                </p>
+              ) : RAW_BACKEND_URL && RAW_BACKEND_URL.includes('onrender.com') ? (
+                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                  The backend service is currently starting up. Please wait a few seconds and click <strong>Retry Connection</strong>.
                 </p>
               ) : (
                 <>
